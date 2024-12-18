@@ -1,7 +1,15 @@
-all: sequential_julia
+CC = gcc
+MPICC = mpicc
+CFLAGS = -O3
+LDFLAGS = -lm
+
+all: sequential_julia 1D_parallel_julia
 
 sequential_julia: sequential_julia.c
-	@gcc -O3 sequential_julia.c -o sequential_julia -lm
+	@$(CC) $(CFLAGS) sequential_julia.c -o sequential_julia $(LDFLAGS)
+
+1D_parallel_julia: 1D_parallel_julia.c
+	@$(MPICC) $(CFLAGS) 1D_parallel_julia.c -o 1D_parallel_julia
 
 clean:
-	@rm -f sequential_julia julia.bmp
+	@rm -f sequential_julia 1D_parallel_julia julia.bmp

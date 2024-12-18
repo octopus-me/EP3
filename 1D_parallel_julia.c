@@ -25,9 +25,9 @@ int compute_julia_pixel(int x, int y, int width, int height, float tint_bias, un
     }
 
     float color_bias = (float)num_iter / max_iter;
-    rgb[0] = (num_iter == 0 ? 200 : -500.0 * pow(tint_bias, 1.2) * pow(color_bias, 1.6));
-    rgb[1] = (num_iter == 0 ? 100 : -255.0 * pow(color_bias, 0.3));
-    rgb[2] = (num_iter == 0 ? 100 : 255 - 255.0 * pow(tint_bias, 1.2) * pow(color_bias, 3.0));
+    rgb[0] = (unsigned char)(num_iter == 0 ? 200 : (-500.0 * pow(tint_bias, 1.2) * pow(color_bias, 1.6)));
+    rgb[1] = (unsigned char)(num_iter == 0 ? 100 : (-255.0 * pow(color_bias, 0.3)));
+    rgb[2] = (unsigned char)(num_iter == 0 ? 100 : (255 - 255.0 * pow(tint_bias, 1.2) * pow(color_bias, 3.0)));
 
     return 0;
 }
@@ -59,6 +59,7 @@ void write_bmp_header(FILE *f, int width, int height) {
 
 int main(int argc, char *argv[]) {
     int rank, size, n, start_row, end_row, total_rows;
+
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -90,15 +91,23 @@ int main(int argc, char *argv[]) {
     }
     total_rows = end_row - start_row + 1;
 
-    // Alocar espaço para os pixels locais
     unsigned char *local_pixels = (unsigned char *)malloc(3 * width * total_rows);
 
-    // Calcular os pixels locais
+    double start_time = MPI_Wtime();
+    printf("Rank %d iniciando cálculo em %f\n", rank, start_time);
+    fflush(stdout);
+
+    // Calculo dos pixels locais
     for (int y = 0; y < total_rows; y++) {
+        int global_y = start_row + y; 
         for (int x = 0; x < width; x++) {
-            compute_julia_pixel(x, start_row + y, width, n, 1.0, &local_pixels[(y * width + x) * 3]);
+            compute_julia_pixel(x, global_y, width, n, 1.0, &local_pixels[(y * width + x) * 3]);
         }
     }
+
+    double end_time = MPI_Wtime();
+    printf("Rank %d finalizando cálculo em %f (tempo de cálculo = %f s)\n", rank, end_time, end_time - start_time);
+    fflush(stdout);
 
     MPI_Barrier(MPI_COMM_WORLD);
     if (rank == 0) {
