@@ -32,10 +32,33 @@ int compute_julia_pixel(int x, int y, int width, int height, float tint_bias, un
     return 0;
 }
 
+void write_bmp_header(FILE *f, int width, int height) {
+    unsigned int row_size = width * 3 + (width * 3) % 4; // Alinhamento a múltiplos de 4
+    unsigned int filesize = 54 + row_size * height;
+
+    fwrite("BM", 2, 1, f);
+    fwrite(&filesize, 4, 1, f);
+    fwrite("\0\0\0\0", 4, 1, f);
+    unsigned int offset = 54;
+    fwrite(&offset, 4, 1, f);
+
+    unsigned int header_size = 40;
+    unsigned short planes = 1, bits = 24;
+    fwrite(&header_size, 4, 1, f);
+    fwrite(&width, 4, 1, f);
+    fwrite(&height, 4, 1, f);
+    fwrite(&planes, 2, 1, f);
+    fwrite(&bits, 2, 1, f);
+    fwrite("\0\0\0\0", 4, 1, f);
+    fwrite("\0\0\0\0", 4, 1, f);
+    fwrite("\0\0\0\0", 4, 1, f);
+    fwrite("\0\0\0\0", 4, 1, f);
+    fwrite("\0\0\0\0", 4, 1, f);
+    fwrite("\0\0\0\0", 4, 1, f);
+}
+
 int main(int argc, char *argv[]) {
     int rank, size, n, start_row, end_row, total_rows;
-    double start_time, end_time;
-
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -57,7 +80,7 @@ int main(int argc, char *argv[]) {
     int lines_per_process = n / size;
     int remainder = n % size;
 
-    // Calcular as linhas atribuídas a cada processo
+    // Calcular linhas atribuídas a cada processo
     if (rank < remainder) {
         start_row = rank * (lines_per_process + 1);
         end_row = start_row + lines_per_process;
@@ -69,14 +92,6 @@ int main(int argc, char *argv[]) {
 
     // Alocar espaço para os pixels locais
     unsigned char *local_pixels = (unsigned char *)malloc(3 * width * total_rows);
-    if (!local_pixels) {
-        fprintf(stderr, "Erro: Falha na alocação de memória\n");
-        MPI_Finalize();
-        return 1;
-    }
-
-    // Medir o tempo de cálculo
-    start_time = MPI_Wtime();
 
     // Calcular os pixels locais
     for (int y = 0; y < total_rows; y++) {
@@ -85,11 +100,22 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    end_time = MPI_Wtime();
-
-    // Imprimir o tempo gasto por cada processo
-    printf("[Process %d out of %d]: Computed rows %d to %d (Total: %d rows). Time: %.6f seconds\n",
-           rank, size, start_row, end_row, total_rows, end_time - start_time);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) {
+        FILE *file = fopen("julia_parallel.bmp", "wb");
+        write_bmp_header(file, width, n);
+        fwrite(local_pixels, 3, width * total_rows, file);
+        fclose(file);
+        MPI_Send(NULL, 0, MPI_BYTE, rank + 1, 0, MPI_COMM_WORLD);
+    } else {
+        MPI_Recv(NULL, 0, MPI_BYTE, rank - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        FILE *file = fopen("julia_parallel.bmp", "ab");
+        fwrite(local_pixels, 3, width * total_rows, file);
+        fclose(file);
+        if (rank < size - 1) {
+            MPI_Send(NULL, 0, MPI_BYTE, rank + 1, 0, MPI_COMM_WORLD);
+        }
+    }
 
     free(local_pixels);
     MPI_Finalize();
